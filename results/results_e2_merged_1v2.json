@@ -1,0 +1,206 @@
+{
+  "bs_a": 1,
+  "bs_b": 2,
+  "fid": {
+    "pairs": [
+      {
+        "seed": 42,
+        "bs1": 58.57986039656264,
+        "bs2": 57.60106322678651,
+        "diff": 0.9787971697761293
+      },
+      {
+        "seed": 43,
+        "bs1": 55.784508339662466,
+        "bs2": 58.2065748888012,
+        "diff": -2.4220665491387336
+      },
+      {
+        "seed": 44,
+        "bs1": 57.21493165855766,
+        "bs2": 56.77744592639425,
+        "diff": 0.4374857321634096
+      },
+      {
+        "seed": 45,
+        "bs1": 55.4859,
+        "bs2": 51.68427746006873,
+        "diff": 3.801622539931273
+      },
+      {
+        "seed": 46,
+        "bs1": 58.18852467503342,
+        "bs2": 56.14239898812107,
+        "diff": 2.0461256869123474
+      },
+      {
+        "seed": 47,
+        "bs1": 63.41281384724455,
+        "bs2": 53.36060612663087,
+        "diff": 10.05220772061368
+      }
+    ],
+    "t_test": {
+      "n": 6,
+      "mean_diff": 2.4823620500430175,
+      "sd_diff": 4.236247402360344,
+      "t": 1.4353553515469046,
+      "p_two_sided": 0.21066216688085415,
+      "p_one_sided": 0.10533108344042708
+    },
+    "wilcoxon": {
+      "statistic": 17.0,
+      "p_one_sided": 0.109375
+    },
+    "sign_test": {
+      "n": 6,
+      "n_positive": 5,
+      "p_one_sided": 0.109375
+    },
+    "bootstrap_ci": {
+      "mean": 2.4823620500430175,
+      "ci": 0.95,
+      "lo": -0.25116379465544486,
+      "hi": 5.871278617573644,
+      "n_boot": 20000
+    }
+  },
+  "loss": {
+    "pairs": [],
+    "t_test": {
+      "n": 0,
+      "mean_diff": NaN,
+      "sd_diff": 0.0,
+      "t": Infinity,
+      "p_two_sided": NaN,
+      "p_one_sided": NaN
+    },
+    "bootstrap_ci": {
+      "mean": NaN,
+      "ci": 0.95,
+      "lo": NaN,
+      "hi": NaN,
+      "n_boot": 20000
+    }
+  },
+  "sources": [
+    "results_e2_merged.json",
+    "results_e2_bs2.json"
+  ],
+  "per_run": [
+    {
+      "block_size": 1,
+      "seed": 42,
+      "fid": 58.57986039656264,
+      "source": "results_e2_merged.json"
+    },
+    {
+      "block_size": 1,
+      "seed": 43,
+      "fid": 55.784508339662466,
+      "source": "results_e2_merged.json"
+    },
+    {
+      "block_size": 1,
+      "seed": 44,
+      "fid": 57.21493165855766,
+      "source": "results_e2_merged.json"
+    },
+    {
+      "block_size": 4,
+      "seed": 42,
+      "fid": 50.74490887207784,
+      "source": "results_e2_merged.json"
+    },
+    {
+      "block_size": 4,
+      "seed": 43,
+      "fid": 55.834917486865564,
+      "source": "results_e2_merged.json"
+    },
+    {
+      "block_size": 4,
+      "seed": 44,
+      "fid": 46.87679048120755,
+      "source": "results_e2_merged.json"
+    },
+    {
+      "block_size": 1,
+      "seed": 45,
+      "fid": 55.4859,
+      "source": "results_e2_merged.json"
+    },
+    {
+      "block_size": 1,
+      "seed": 46,
+      "fid": 58.18852467503342,
+      "source": "results_e2_merged.json"
+    },
+    {
+      "block_size": 1,
+      "seed": 47,
+      "fid": 63.41281384724455,
+      "source": "results_e2_merged.json"
+    },
+    {
+      "block_size": 4,
+      "seed": 45,
+      "fid": 47.70032656379563,
+      "source": "results_e2_merged.json"
+    },
+    {
+      "block_size": 4,
+      "seed": 46,
+      "fid": 47.434554715243465,
+      "source": "results_e2_merged.json"
+    },
+    {
+      "block_size": 4,
+      "seed": 47,
+      "fid": 45.878695636939185,
+      "source": "results_e2_merged.json"
+    },
+    {
+      "block_size": 2,
+      "seed": 42,
+      "fid": 57.60106322678651,
+      "loss": 672.6380310058594,
+      "source": "results_e2_bs2.json"
+    },
+    {
+      "block_size": 2,
+      "seed": 43,
+      "fid": 58.2065748888012,
+      "loss": 673.8862568129841,
+      "source": "results_e2_bs2.json"
+    },
+    {
+      "block_size": 2,
+      "seed": 44,
+      "fid": 56.77744592639425,
+      "loss": 673.1289312900641,
+      "source": "results_e2_bs2.json"
+    },
+    {
+      "block_size": 2,
+      "seed": 45,
+      "fid": 51.68427746006873,
+      "loss": 673.6413220788678,
+      "source": "results_e2_bs2.json"
+    },
+    {
+      "block_size": 2,
+      "seed": 46,
+      "fid": 56.14239898812107,
+      "loss": 673.2374635354066,
+      "source": "results_e2_bs2.json"
+    },
+    {
+      "block_size": 2,
+      "seed": 47,
+      "fid": 53.36060612663087,
+      "loss": 674.1024138621794,
+      "source": "results_e2_bs2.json"
+    }
+  ]
+}

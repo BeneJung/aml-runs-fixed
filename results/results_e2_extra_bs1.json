@@ -1,0 +1,45 @@
+{
+  "config": {
+    "T": 4,
+    "epochs": 100,
+    "batch_size": 128,
+    "lr": 0.0003,
+    "seeds": [
+      46,
+      47
+    ],
+    "block_sizes": [
+      1
+    ],
+    "n_fid_samples": 10000
+  },
+  "per_run": [
+    {
+      "block_size": 1,
+      "seed": 46,
+      "final_loss": 690.3106008676382,
+      "best_loss": 690.2637604281433,
+      "best_epoch": 78,
+      "fid": 58.18852467503342
+    },
+    {
+      "block_size": 1,
+      "seed": 47,
+      "final_loss": 693.2495319333851,
+      "best_loss": 691.538587912535,
+      "best_epoch": 93,
+      "fid": 63.41281384724455
+    }
+  ],
+  "aggregates": {
+    "1": {
+      "n_seeds": 2,
+      "final_loss_mean": 691.780029296875,
+      "final_loss_std": 2.0781188011169434,
+      "best_loss_mean": 690.901123046875,
+      "best_loss_std": 0.9014489650726318,
+      "fid_mean": 60.800669261138985,
+      "fid_std": 3.6941303005499444
+    }
+  }
+}

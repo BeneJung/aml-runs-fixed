@@ -1,0 +1,22 @@
+{
+  "config": {
+    "T": 4,
+    "epochs": 100,
+    "batch_size": 128,
+    "lr": 0.0003,
+    "seeds": [45],
+    "block_sizes": [1],
+    "n_fid_samples": 10000,
+    "note": "salvaged from interrupted run_e2.py (b2dju5jem) before migrating remaining seeds to tmux"
+  },
+  "per_run": [
+    {
+      "block_size": 1,
+      "seed": 45,
+      "final_loss": 691.0256,
+      "best_loss": 690.9020,
+      "best_epoch": 92,
+      "fid": 55.4859
+    }
+  ]
+}

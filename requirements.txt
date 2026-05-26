@@ -1,0 +1,9 @@
+torch>=2.0
+torchvision>=0.15
+numpy
+scipy
+matplotlib
+tqdm
+pytorch-fid
+Pillow            # explicit; used by mnist_fd.py for PNG IO
+pytest            # for the test suite under tests/

@@ -1,0 +1,200 @@
+{
+  "by_T": [
+    {
+      "T": 2,
+      "pairs": [
+        {
+          "seed": 42,
+          "bs1": 134.64557122783944,
+          "bs4": 94.93052006887335,
+          "diff": 39.71505115896609
+        },
+        {
+          "seed": 43,
+          "bs1": 138.418100123866,
+          "bs4": 100.13774251443506,
+          "diff": 38.280357609430936
+        },
+        {
+          "seed": 44,
+          "bs1": 142.2396051049928,
+          "bs4": 92.88592487126893,
+          "diff": 49.353680233723864
+        }
+      ],
+      "t_test": {
+        "n": 3,
+        "mean_diff": 42.4496963340403,
+        "sd_diff": 6.021904321772879,
+        "t": 12.209597975608812,
+        "p_two_sided": 0.006641313811337479,
+        "p_one_sided": 0.0033206569056687396
+      },
+      "wilcoxon": {
+        "statistic": 6.0,
+        "p_one_sided": 0.125
+      },
+      "sign_test": {
+        "n": 3,
+        "n_positive": 3,
+        "p_one_sided": 0.125
+      },
+      "bootstrap_ci": {
+        "mean": 42.4496963340403,
+        "ci": 0.95,
+        "lo": 38.280357609430936,
+        "hi": 49.35368023372386,
+        "n_boot": 20000,
+        "is_descriptive": true,
+        "note": "With n=3 only 27 distinct resamples exist; the 2.5/97.5 percentiles collapse to data extrema and the interval should not be read as inferential."
+      }
+    },
+    {
+      "T": 4,
+      "pairs": [
+        {
+          "seed": 42,
+          "bs1": 58.99084929409071,
+          "bs4": 50.32030879662405,
+          "diff": 8.67054049746666
+        },
+        {
+          "seed": 43,
+          "bs1": 55.52851164118243,
+          "bs4": 55.8428970891151,
+          "diff": -0.3143854479326649
+        },
+        {
+          "seed": 44,
+          "bs1": 57.298500080961446,
+          "bs4": 46.38932613074887,
+          "diff": 10.909173950212576
+        }
+      ],
+      "t_test": {
+        "n": 3,
+        "mean_diff": 6.421776333248857,
+        "sd_diff": 5.940099038789357,
+        "t": 1.8725012514769985,
+        "p_two_sided": 0.2020168473479924,
+        "p_one_sided": 0.1010084236739962
+      },
+      "wilcoxon": {
+        "statistic": 5.0,
+        "p_one_sided": 0.25
+      },
+      "sign_test": {
+        "n": 3,
+        "n_positive": 2,
+        "p_one_sided": 0.5
+      },
+      "bootstrap_ci": {
+        "mean": 6.421776333248857,
+        "ci": 0.95,
+        "lo": -0.3143854479326649,
+        "hi": 10.909173950212576,
+        "n_boot": 20000,
+        "is_descriptive": true,
+        "note": "With n=3 only 27 distinct resamples exist; the 2.5/97.5 percentiles collapse to data extrema and the interval should not be read as inferential."
+      }
+    },
+    {
+      "T": 8,
+      "pairs": [
+        {
+          "seed": 42,
+          "bs1": 32.45223026146485,
+          "bs4": 25.359214380148728,
+          "diff": 7.09301588131612
+        },
+        {
+          "seed": 43,
+          "bs1": 31.03495272109538,
+          "bs4": 25.461705104454424,
+          "diff": 5.5732476166409555
+        },
+        {
+          "seed": 44,
+          "bs1": 33.90771221381553,
+          "bs4": 25.859851253073757,
+          "diff": 8.047860960741772
+        }
+      ],
+      "t_test": {
+        "n": 3,
+        "mean_diff": 6.904708152899616,
+        "sd_diff": 1.2480074723880843,
+        "t": 9.582719332098907,
+        "p_two_sided": 0.010715148676214703,
+        "p_one_sided": 0.0053575743381073515
+      },
+      "wilcoxon": {
+        "statistic": 6.0,
+        "p_one_sided": 0.125
+      },
+      "sign_test": {
+        "n": 3,
+        "n_positive": 3,
+        "p_one_sided": 0.125
+      },
+      "bootstrap_ci": {
+        "mean": 6.904708152899616,
+        "ci": 0.95,
+        "lo": 5.5732476166409555,
+        "hi": 8.047860960741772,
+        "n_boot": 20000,
+        "is_descriptive": true,
+        "note": "With n=3 only 27 distinct resamples exist; the 2.5/97.5 percentiles collapse to data extrema and the interval should not be read as inferential."
+      }
+    },
+    {
+      "T": 16,
+      "pairs": [
+        {
+          "seed": 42,
+          "bs1": 22.303453570154545,
+          "bs4": 13.787498440152575,
+          "diff": 8.51595513000197
+        },
+        {
+          "seed": 43,
+          "bs1": 24.487042900810252,
+          "bs4": 13.108591881186442,
+          "diff": 11.37845101962381
+        },
+        {
+          "seed": 44,
+          "bs1": 32.88080593998032,
+          "bs4": 14.043900313620213,
+          "diff": 18.836905626360107
+        }
+      ],
+      "t_test": {
+        "n": 3,
+        "mean_diff": 12.910437258661963,
+        "sd_diff": 5.3282962722169,
+        "t": 4.196751107203165,
+        "p_two_sided": 0.05235799882973535,
+        "p_one_sided": 0.026178999414867676
+      },
+      "wilcoxon": {
+        "statistic": 6.0,
+        "p_one_sided": 0.125
+      },
+      "sign_test": {
+        "n": 3,
+        "n_positive": 3,
+        "p_one_sided": 0.125
+      },
+      "bootstrap_ci": {
+        "mean": 12.910437258661963,
+        "ci": 0.95,
+        "lo": 8.51595513000197,
+        "hi": 18.836905626360107,
+        "n_boot": 20000,
+        "is_descriptive": true,
+        "note": "With n=3 only 27 distinct resamples exist; the 2.5/97.5 percentiles collapse to data extrema and the interval should not be read as inferential."
+      }
+    }
+  ]
+}

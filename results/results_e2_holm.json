@@ -1,0 +1,74 @@
+{
+  "alpha": 0.05,
+  "pairs_tested": [
+    "1v2",
+    "1v4",
+    "2v4"
+  ],
+  "per_pair": {
+    "1v2": {
+      "n_pairs": 6,
+      "mean_diff": 2.4823620500430175,
+      "sd_diff": 4.236247402360344,
+      "paired_t_p_one_sided": 0.10533108344042708,
+      "wilcoxon_p_one_sided": 0.109375,
+      "sign_p_one_sided": 0.109375,
+      "bootstrap_ci": {
+        "mean": 2.4823620500430175,
+        "ci": 0.95,
+        "lo": -0.25116379465544486,
+        "hi": 5.871278617573644,
+        "n_boot": 20000
+      },
+      "holm_adjusted_p": 0.10533108344042708,
+      "holm_reject": false,
+      "holm_adjusted_wilcoxon_p": 0.109375,
+      "holm_reject_wilcoxon": false
+    },
+    "1v4": {
+      "n_pairs": 6,
+      "mean_diff": 9.032724193488583,
+      "sd_diff": 5.699716771590051,
+      "paired_t_p_one_sided": 0.005809960806125947,
+      "wilcoxon_p_one_sided": 0.03125,
+      "sign_p_one_sided": 0.109375,
+      "bootstrap_ci": {
+        "mean": 9.032724193488583,
+        "ci": 0.95,
+        "lo": 4.787742855289191,
+        "hi": 13.1545785771858,
+        "n_boot": 20000
+      },
+      "holm_adjusted_p": 0.011619921612251893,
+      "holm_reject": true,
+      "holm_adjusted_wilcoxon_p": 0.0625,
+      "holm_reject_wilcoxon": false
+    },
+    "2v4": {
+      "n_pairs": 6,
+      "mean_diff": 6.550362143445565,
+      "sd_diff": 2.859668706361074,
+      "paired_t_p_one_sided": 0.0012434906251960198,
+      "wilcoxon_p_one_sided": 0.015625,
+      "sign_p_one_sided": 0.015625,
+      "bootstrap_ci": {
+        "mean": 6.550362143445565,
+        "ci": 0.95,
+        "lo": 4.4039208843058,
+        "hi": 8.511413861118598,
+        "n_boot": 20000
+      },
+      "holm_adjusted_p": 0.0037304718755880595,
+      "holm_reject": true,
+      "holm_adjusted_wilcoxon_p": 0.046875,
+      "holm_reject_wilcoxon": true
+    }
+  },
+  "sources": [
+    "results/results_e2_from_ckpts.json",
+    "results/results_e2_extra_bs1.json",
+    "results/results_e2_extra_bs1_s45.json",
+    "results/results_e2_extra_bs4.json",
+    "results/results_e2_bs2.json"
+  ]
+}

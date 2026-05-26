@@ -1,0 +1,54 @@
+{
+  "config": {
+    "T": 4,
+    "epochs": 100,
+    "batch_size": 128,
+    "lr": 0.0003,
+    "seeds": [
+      45,
+      46,
+      47
+    ],
+    "block_sizes": [
+      4
+    ],
+    "n_fid_samples": 10000
+  },
+  "per_run": [
+    {
+      "block_size": 4,
+      "seed": 45,
+      "final_loss": 657.1882179455879,
+      "best_loss": 656.8400426359258,
+      "best_epoch": 92,
+      "fid": 47.70032656379563
+    },
+    {
+      "block_size": 4,
+      "seed": 46,
+      "final_loss": 656.2970671042418,
+      "best_loss": 656.2970671042418,
+      "best_epoch": 100,
+      "fid": 47.434554715243465
+    },
+    {
+      "block_size": 4,
+      "seed": 47,
+      "final_loss": 658.6718011839777,
+      "best_loss": 657.2333320552467,
+      "best_epoch": 69,
+      "fid": 45.878695636939185
+    }
+  ],
+  "aggregates": {
+    "4": {
+      "n_seeds": 3,
+      "final_loss_mean": 657.3857421875,
+      "final_loss_std": 1.1996299028396606,
+      "best_loss_mean": 656.7901000976562,
+      "best_loss_std": 0.4701289236545563,
+      "fid_mean": 47.00452563865942,
+      "fid_std": 0.9840114651012747
+    }
+  }
+}
