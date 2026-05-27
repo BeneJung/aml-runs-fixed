@@ -97,6 +97,10 @@ def main():
     parser.add_argument("--select_by", type=str, default="train_loss",
                         choices=["train_loss", "val_loss"],
                         help="Best-ckpt selection criterion (B6).")
+    parser.add_argument("--val_samples_per_t", type=int, default=4,
+                        help="z_t samples per t for val ELBO estimate "
+                             "(B6). Lower = faster epochs, mildly noisier "
+                             "selection. 2 is a good speedup for 100-epoch runs.")
     args = parser.parse_args()
 
     print(f"E2 MNIST FID sweep | T={args.T} epochs={args.epochs} "
@@ -122,6 +126,7 @@ def main():
                 loss_form=args.loss_form,
                 val_fraction=args.val_fraction,
                 select_by=args.select_by,
+                val_samples_per_t=args.val_samples_per_t,
             )
             print(f"  final_loss={r['final_loss']:.4f} "
                   f"best_loss={r['best_loss']:.4f} "

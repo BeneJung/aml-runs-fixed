@@ -101,6 +101,7 @@ def main():
     parser.add_argument("--val_fraction", type=float, default=0.0)
     parser.add_argument("--select_by", type=str, default="train_loss",
                         choices=["train_loss", "val_loss"])
+    parser.add_argument("--val_samples_per_t", type=int, default=4)
     parser.add_argument("--keep_gen", action="store_true")
     args = parser.parse_args()
 
@@ -154,6 +155,7 @@ def main():
                 loss_form=args.loss_form,
                 val_fraction=args.val_fraction,
                 select_by=args.select_by,
+                val_samples_per_t=args.val_samples_per_t,
             )
             print(f"  final_loss={r['final_loss']:.4f}  "
                   f"best_score={r['best_score']:.4f}  "

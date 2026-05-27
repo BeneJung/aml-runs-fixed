@@ -86,6 +86,7 @@ def main():
     parser.add_argument("--val_fraction", type=float, default=0.0)
     parser.add_argument("--select_by", type=str, default="train_loss",
                         choices=["train_loss", "val_loss"])
+    parser.add_argument("--val_samples_per_t", type=int, default=4)
     args = parser.parse_args()
 
     os.makedirs(args.save_dir, exist_ok=True)
@@ -127,6 +128,7 @@ def main():
                         loss_form=args.loss_form,
                         val_fraction=args.val_fraction,
                         select_by=args.select_by,
+                        val_samples_per_t=args.val_samples_per_t,
                     )
                     model, fp = r["model"], r["forward_process"]
                     final_loss = float(r["final_loss"])
