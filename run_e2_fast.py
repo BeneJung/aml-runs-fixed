@@ -1,15 +1,17 @@
-"""Drop-in replacement for run_e2.py that avoids the PNG round-trip.
+"""In-memory FID variant of run_e2.py, v3-audit version.
 
-Same CLI semantics as run_e2.py (same flags), but computes FID in memory
-instead of by writing 10k PNGs and reading them back through pytorch_fid.
-Solves the rclone bottleneck on Renku where 10k tiny file reads take
-hours rather than seconds.
-
-Differences from run_e2.py:
-- --gen_root and --real_dir are accepted for compat but ignored
-- A single InceptionV3 model is loaded once and reused across all (bs, seed)
-- Real MNIST test images are loaded once and reused
-- Generated samples never touch disk
+Differences vs the v2 run_e2_fast.py:
+  * Accepts `--ema_decay`. EMA shadow is saved in every checkpoint and
+    used for FID scoring (the live weights are *not* used to score FID).
+  * Accepts `--save_prefix` (default "bs{bs}_s{seed}"). Useful for the
+    pilot-ablation script which writes cells to a single shared dir.
+  * Accepts `--cell_name` — purely a label written into the results JSON
+    config so `scripts/pick_best_ablation.py` can recover it.
+  * Defaults `--loss_form true_elbo` and `--val_samples_per_t 1` to match
+    the v3 train_mnist.py defaults.
+  * Uses `restore_into_model="auto"` so the model returned by run_mnist()
+    is already the val-best (or train-best, depending on select_by) and
+    EMA-loaded — we score FID on that, not on a separately-loaded best.pt.
 """
 
 import argparse
@@ -28,7 +30,6 @@ from pytorch_fid.inception import InceptionV3
 from train_mnist import run_mnist
 
 
-# Cache the InceptionV3 model across runs in the same process
 _INC = None
 _REAL_FEATS = None
 
@@ -43,7 +44,6 @@ def get_inception(device):
 
 @torch.no_grad()
 def features(x_1ch, device, batch_size=50):
-    """Per-image: (N, 1, 28, 28) in [0, 1] -> (N, 2048) numpy features."""
     inc = get_inception(device)
     fs = []
     for i in range(0, x_1ch.shape[0], batch_size):
@@ -54,7 +54,6 @@ def features(x_1ch, device, batch_size=50):
 
 
 def get_real_features(device, n_real=10000):
-    """Compute real-image features once and cache them."""
     global _REAL_FEATS
     if _REAL_FEATS is None:
         _, test_loader = get_binarized_mnist(batch_size=n_real)
@@ -98,24 +97,34 @@ def main():
                    default="cuda" if torch.cuda.is_available() else "cpu")
     p.add_argument("--n_fid_samples", type=int, default=10000)
     p.add_argument("--save_dir", type=str, default="checkpoints_e2_floor6")
-    # Backwards-compat (ignored):
-    p.add_argument("--real_dir", type=str, default=None)
-    p.add_argument("--gen_root", type=str, default=None)
-    p.add_argument("--keep_gen", action="store_true")
+    p.add_argument("--save_prefix", type=str, default=None,
+                   help="If set, ckpts are <save_dir>/<save_prefix>_{best,valbest,final}.pt. "
+                        "Default: bs{bs}_s{seed}.")
+    p.add_argument("--cell_name", type=str, default=None,
+                   help="Label written into results JSON config (for "
+                        "scripts/pick_best_ablation.py).")
+    p.add_argument("--real_dir", type=str, default=None)  # ignored
+    p.add_argument("--gen_root", type=str, default=None)  # ignored
+    p.add_argument("--keep_gen", action="store_true")     # ignored
     p.add_argument("--results_json", type=str, default="results/results_e2.json")
     p.add_argument("--sigmoid_offset", type=float,
                    default=LearnedForwardProcess.HISTORICAL_OFFSET)
-    p.add_argument("--loss_form", type=str, default="ce",
+    p.add_argument("--loss_form", type=str, default="true_elbo",
                    choices=["ce", "true_elbo"])
     p.add_argument("--val_fraction", type=float, default=0.0)
     p.add_argument("--select_by", type=str, default="train_loss",
                    choices=["train_loss", "val_loss"])
-    p.add_argument("--val_samples_per_t", type=int, default=4)
+    p.add_argument("--val_samples_per_t", type=int, default=1)
+    p.add_argument("--ema_decay", type=float, default=None,
+                   help="EMA decay; e.g. 0.9999. Default off.")
     args = p.parse_args()
 
-    print(f"run_e2_fast | T={args.T} epochs={args.epochs} device={args.device}")
+    print(f"run_e2_fast (v3) | T={args.T} epochs={args.epochs} device={args.device}")
     print(f"  block_sizes={args.block_sizes} seeds={args.seeds} "
           f"n_fid={args.n_fid_samples}")
+    print(f"  sigmoid_offset={args.sigmoid_offset} loss_form={args.loss_form} "
+          f"select_by={args.select_by} val_fraction={args.val_fraction} "
+          f"ema={args.ema_decay}")
     print(f"  IN-MEMORY FID (no PNG round-trip)")
 
     results = []
@@ -123,63 +132,64 @@ def main():
         for seed in args.seeds:
             t0 = time.time()
             print(f"\n=== training |G|={bs} seed={seed} ===")
+
+            prefix = args.save_prefix if args.save_prefix else f"bs{bs}_s{seed}"
+
             r = run_mnist(
                 block_size=bs, seed=seed, T=args.T, epochs=args.epochs,
                 batch_size=args.batch_size, lr=args.lr,
                 device=args.device, save_dir=args.save_dir,
-                save_ckpt_as_best=f"bs{bs}_s{seed}_best.pt",
-                save_ckpt_as_final=f"bs{bs}_s{seed}_final.pt",
+                save_prefix=prefix,
                 sample_every=0, samples_dir=None, verbose=True,
                 sigmoid_offset=args.sigmoid_offset,
                 loss_form=args.loss_form,
                 val_fraction=args.val_fraction,
-                select_by=args.select_by,
                 val_samples_per_t=args.val_samples_per_t,
+                ema_decay=args.ema_decay,
+                # run_mnist's "auto" rolls back to valbest if val is on else best
+                restore_into_model="auto",
             )
             train_secs = time.time() - t0
-            print(f"  trained in {train_secs:.1f}s  best_score={r['best_score']:.4f}")
+            print(f"  trained in {train_secs:.1f}s "
+                  f"best_train_loss={r['best_train_loss']:.4f} "
+                  f"best_val_loss={r['best_val_loss']}  ")
 
-            # Score FID on best.pt (lowest val ELBO), not the final-epoch model.
-            # The final-epoch model drifts after the best epoch and gives
-            # misleadingly bad FID — we found this the hard way during R1 v2.
-            best_path = f"{args.save_dir}/bs{bs}_s{seed}_best.pt"
-            print(f"  loading best.pt (epoch {r['best_epoch']}) for FID...")
-            best_ckpt = torch.load(best_path, map_location=args.device,
-                                    weights_only=False)
-            _so = best_ckpt.get("sigmoid_offset", args.sigmoid_offset)
-            from fldd.unet import UNet
-            best_model = UNet(channels=(32, 64, 128), block_size=bs).to(args.device).eval()
-            best_model.load_state_dict(best_ckpt["model"])
-            best_fp = LearnedForwardProcess(T=args.T, sigmoid_offset=_so).to(args.device).eval()
-            best_fp.load_state_dict(best_ckpt["forward"])
-
+            # The model returned by run_mnist has the selected ckpt already
+            # loaded (EMA copied in if applicable). Score FID directly on it.
+            from fldd.train import use_ema
             t1 = time.time()
-            print(f"  computing FID (in-memory)...")
-            fid = compute_fid_inmem(
-                best_model, best_fp,
-                args.T, bs, args.n_fid_samples, args.device,
-            )
-            del best_model, best_fp, best_ckpt
+            print(f"  computing FID (in-memory, on EMA weights={r['ema'] is not None})...")
+            with use_ema(r["model"], r["ema"]):
+                fid = compute_fid_inmem(
+                    r["model"], r["forward_process"],
+                    args.T, bs, args.n_fid_samples, args.device,
+                )
             fid_secs = time.time() - t1
             print(f"  FID = {fid:.4f}  (computed in {fid_secs:.1f}s)")
+
+            results.append({
+                "block_size": bs, "seed": seed,
+                "final_loss": r["final_loss"],
+                "best_loss": r["best_train_loss"],
+                "best_epoch": r["best_train_epoch"],
+                "best_val": r["best_val_loss"],
+                "best_val_epoch": r["best_val_epoch"],
+                "selected_alphas": r["final_alphas"],
+                "fid": float(fid),
+                "train_secs": train_secs, "fid_secs": fid_secs,
+                "restored_kind": (r["restored"] or {}).get("which"),
+                "restored_epoch": (r["restored"] or {}).get("epoch"),
+                "ema_decay": args.ema_decay,
+            })
 
             del r["model"], r["forward_process"]
             if args.device == "cuda":
                 torch.cuda.empty_cache()
 
-            results.append({
-                "block_size": bs, "seed": seed,
-                "final_loss": r["final_loss"],
-                "best_loss": r["best_score"],
-                "best_epoch": r["best_epoch"],
-                "fid": float(fid),
-                "train_secs": train_secs, "fid_secs": fid_secs,
-            })
-
     print("\n=== summary ===")
     for r in results:
         print(f"  |G|={r['block_size']} seed={r['seed']} "
-              f"fid={r['fid']:.4f} loss={r['best_loss']:.4f}")
+              f"fid={r['fid']:.4f} best_loss={r['best_loss']:.4f}")
 
     os.makedirs(os.path.dirname(args.results_json) or ".", exist_ok=True)
     payload = {
@@ -191,6 +201,8 @@ def main():
             "loss_form": args.loss_form, "select_by": args.select_by,
             "val_fraction": args.val_fraction,
             "val_samples_per_t": args.val_samples_per_t,
+            "ema_decay": args.ema_decay,
+            "cell_name": args.cell_name,
             "fid_mode": "in-memory",
         },
         "per_run": results,

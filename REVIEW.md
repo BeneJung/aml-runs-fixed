@@ -17,6 +17,38 @@ not an unfair asymmetry); **B7 explicitly downgraded** to "risk, not defect"
 B1 and B4 are confirmed. A new section [F. Next steps](#f-next-steps)
 proposes a concrete plan.
 
+**Revision note (v3 — 2026-05-29 audit-of-audit):** Two things found wrong
+in the v2 revision itself, plus one new finding:
+
+- **B5 gradient-direction claim was inverted** (v2 said "parasitic toward
+  *higher*-entropy α"; the right direction is toward *lower*-entropy α,
+  consistent with the v1 floor saturation). Rewritten below.
+- **B4 frozen-α value `[0.06, 0.50]` is itself the v1 floor** — using it
+  as the "schedule-controlled" baseline reintroduces the artefact B1
+  exists to remove. Recommendation rewritten below.
+- **B6 fix is methodologically correct but trades absolute FID for the
+  fix.** Across the v2 R1 sweep and the independent reparam6_quick branch,
+  val-ELBO best-checkpoint at epoch ~22 gives FID ~70 / ~56 for |G|=1/4
+  vs the historical v1 train-best-at-epoch-90 of 58 / 49. The block
+  *advantage* grows (Δ ≈ 9 → ~14 FID points), but absolute FID
+  regresses. Possible root causes (one or more):
+    1. Validation ELBO is a poor proxy for FID in diffusion (well-known).
+    2. The pre-audit pipeline never used EMA — diffusion models almost
+       always do, and EMA-smoothed weights typically improve FID by
+       5–15 points. **New item B18 below.**
+    3. The learned graded schedule is *worse for sampling* than the
+       degenerate v1 schedule (a real ELBO/FID gap finding).
+  A four-cell ablation (`{ema on/off} × {select=train, select=val}`,
+  all with `loss_form=true_elbo`, `sigmoid_offset=-6`) is the single
+  experiment that disambiguates these. Tracked in §F.7.
+
+**New item B18 (P0, NEW).** **EMA missing from the training pipeline.**
+The pre-audit repo trains plain Adam with no exponential moving average
+on the U-Net weights. This is non-standard for diffusion models —
+DDPM-class methods report EMA decay 0.9999 as table-stakes, and FID
+without EMA is typically several points worse. Fix is ~30 lines in
+`fldd/train.py`. Tracked in §F.7.
+
 ## TL;DR
 
 The core idea is sound and the central empirical finding (block-factorized
@@ -118,8 +150,24 @@ The README acknowledges this: at T=2, `|G|=4` reaches `α_T ≈ 0.50` while
 reverse-head expressiveness (the thing being tested) with the forward
 schedule (a confound). As-is, the "block advantage grows as T shrinks"
 claim is not cleanly attributable. **Fix:** rerun T=2 with the forward
-schedule frozen to a common value across `|G| ∈ {1, 4}` (either the `|G|=4`
-schedule, or a fixed uniform).
+schedule frozen to a common value across `|G| ∈ {1, 4}`.
+
+**Important nuance on the choice of frozen α's.** The v1 chain (and our
+initial `run_chain.sh`) used `FROZEN_ALPHAS="0.06 0.50"`. **These are
+themselves the v1 parameterization-floor values from B1** — i.e. we'd be
+"removing the confound" by freezing to the exact degenerate schedule that
+B1 identifies as artefactual. That's internally inconsistent. A
+methodologically clean choice is one of:
+
+1. `α = [0.25, 0.50]` — linear interpolation between minimum useful
+   corruption and uniform. Neutral, no v1 dependency.
+2. The v2-learned `|G|=4` schedule at T=2 (run R1-T2 first, then freeze
+   to that schedule for the |G|=1 control).
+3. `α = [α_floor_v2, 0.50]` with `α_floor_v2 ≈ 0.001` — match the new
+   parameterization floor; effectively a one-step schedule.
+
+The headline claim survives if R3 with any of (1)–(3) keeps the block
+advantage; the cleanest single experiment is (2).
 
 **B6 (upgraded P1→P0). Best-checkpoint by training loss actually changes the
 headline.** I previously listed this as P1 ("mildly favorable"). On re-check
@@ -174,10 +222,11 @@ method's backbone for a fair head-to-head; (iii) drop the 22.31 reference
 if a direct comparison is out of scope, and frame the contribution as "vs.
 own pixel-factorized baseline under matched protocol."
 
-**B5. Cross-entropy ≠ ELBO when q is learned (now with numbers).**
-`compute_elbo_loss` uses BCE / categorical CE between target q(z_s|x) and
-prediction p_θ(z_s|z_t). Cross-entropy = KL + H[q]. H[q] is independent of
-θ but depends on the schedule φ via `target_pixel_prob`. Two consequences:
+**B5. Cross-entropy ≠ ELBO when q is learned (now with numbers; gradient
+direction CORRECTED from earlier v2 revision).** `compute_elbo_loss` uses
+BCE / categorical CE between target `q(z_s|x)` and prediction
+`p_θ(z_s|z_t)`. Cross-entropy = KL + H[q]. H[q] is independent of θ but
+depends on the schedule φ via `target_pixel_prob`. Two consequences:
 
 - **Loss magnitudes are misleading.** With the observed schedule
   (α ≈ [0.06, 0.06, 0.06, 0.50]), `H[Bern(0.06)] = 0.226 nats/pixel` and
@@ -187,14 +236,31 @@ prediction p_θ(z_s|z_t). Cross-entropy = KL + H[q]. H[q] is independent of
   recon loss is **~531 nats** out of ~690. So roughly 77% of the reported
   "ELBO loss" is H[q], not KL. The numbers should not be compared to
   ELBO/NLL values in other discrete-diffusion papers.
-- **Gradient on φ has a parasitic component** pushing toward higher-entropy
-  α. With the schedule saturated against the parameterization floor (B1),
-  this is masked. Once B1 is fixed, this could affect what schedule the
-  model learns.
+- **The parasitic gradient on φ points toward *lower-entropy* α, not
+  higher.** *(Corrected from the v2 revision, which had this inverted.)*
+  Minimizing `CE = KL + H[target]` requires minimizing `H[target]`; for
+  α ∈ (0, 0.5) the binary entropy `H[Bern(α)]` is monotone increasing in
+  α, so `∂CE/∂α` from the H term is positive — driving α *downward*. This
+  is the same direction the B1 parameterization floor was hard-stopping:
+  in v1 the "early" α's pinned at 0.0596 precisely because both the data
+  fit and the parasitic H gradient wanted lower α, and the floor caught
+  both. After the joint B1 + B5 fix, early α's settle at ~0.024 — well
+  above the new floor of 0.00124 — meaning the data does **not** in fact
+  want α → 0 once the parasitic gradient is removed.
 
-**Fix:** subtract `H[Bern(target_pixel_prob)]` from the per-pixel BCE before
-summing (3-line change). This makes the reported quantity a true ELBO and
-removes the parasitic schedule gradient.
+**Fix:** subtract `H[Bern(target_pixel_prob)]` from the per-pixel BCE
+before summing (3-line change). The reported quantity is then a true ELBO
+and the parasitic schedule gradient is gone.
+
+**Empirical verification (v2 R1 + the independent reparam6_quick branch).**
+The post-fix learned schedule converges to `[0.024, 0.25, 0.46, 0.494]`
+across two completely different α parameterizations of the same fix —
+this branch's `0.5·σ(cumsum(softplus(logits)) − 6)` and the parallel
+branch's `0.5·(1 − exp(−cumsum(softplus(logits))))` form. Cross-replicated
+to 2 decimal places. (i) confirms the fix has the intended effect on
+schedule learning, (ii) confirms the v1 floor saturation was the joint
+B1 + B5 effect rather than a property of the data, and (iii) supplies a
+reviewer-grade cross-validation that the paper can cite directly.
 
 **B7. Optional-stopping *risk* on E2 seeds (downgraded from "concern" to
 "unknown, please confirm protocol").** The original sweep was seeds 42–44;
@@ -406,9 +472,10 @@ existing runs (single GPU, U-Net ~3M params, MNIST 100-epoch runs are
    all 12 E2 ckpts (6 seeds × 2 block sizes). If the headline Δ FID
    changes by >2, that becomes the new headline number.
 9. **T=2 schedule-controlled rerun (B4).** Re-run E4's T=2 row with the
-   forward schedule frozen to a common α (use the |G|=4 learned schedule,
-   or a fixed [0.06, 0.5]) for both block sizes. This is the single
-   experiment that disambiguates the T=2 confound.
+   forward schedule frozen to a common α for both block sizes. **Use the
+   v2-learned |G|=4 T=2 schedule, NOT [0.06, 0.5]** — the latter is the
+   v1 floor and re-introduces the artefact B1 is supposed to remove.
+   Disambiguates the T=2 confound.
 
 ### F.3 — Statistical-power top-ups (~10 GPU hours)
 
@@ -457,3 +524,27 @@ verified, best-by-val-ELBO selection). If F.2.7 reveals the schedule was
 the real story (or wasn't), the paper repositions but stays
 publishable. If F.2.8 shrinks Δ FID below noise, hold the paper and
 rerun with more compute / longer training.
+
+### F.7 — v3 follow-up (after the v2 audit-of-audit)
+
+Two priority actions before more seed sweeps:
+
+17. **Add EMA (B18).** ~30 lines in `fldd/train.py`. Standard recipe:
+    decay 0.9999, warmup `(1+step)/(10+step)`, EMA updated after every
+    optimizer step, EMA-weighted forward used for validation and FID
+    scoring. See the v3 `fldd/train.py` / `train_mnist.py` for the
+    reference implementation.
+18. **Four-cell pilot ablation** before any large rerun. bs4 seed 42
+    only, 50 epochs, all with `loss_form=true_elbo`,
+    `sigmoid_offset=-6`:
+    | EMA \\ select | train_loss | val_loss |
+    |---|---|---|
+    | off | (a) v2 minus B6 | (b) current v2 baseline |
+    | on  | (c) v2 + EMA, train sel | (d) v2 + EMA, val sel |
+    Then a single bs1 seed 42 run at the winning config to confirm the
+    block advantage isn't destroyed by EMA. ~2.5 GPU hours total.
+    Whichever cell minimizes FID dictates the headline rerun config.
+19. **B4 frozen-α rerun: use the v2 |G|=4 T=2 learned schedule, not
+    `[0.06, 0.50]`.** Re-running R3 with the v1-floor values reintroduces
+    the artefact B1 is supposed to remove. Block this step on the R1-T2
+    schedule landing.

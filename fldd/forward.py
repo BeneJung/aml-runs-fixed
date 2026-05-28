@@ -32,6 +32,18 @@ class LearnedForwardProcess(nn.Module):
     that don't pass sigmoid_offset will keep the historical -2.0 default
     so older results reproduce exactly.
 
+    Note on the upper bound
+    -----------------------
+    `0.5 * sigmoid(.)` caps alpha at 0.5. In post-fix runs we observe
+    alpha_T saturating at this cap (alpha_T ~ 0.494 across all v2 R1
+    runs), so the "schedule is now learned" story is partial: early
+    alphas learn away from the lowered floor, alpha_T pins at the upper
+    bound. The cap is *physically* meaningful — alpha > 0.5 would be
+    inverted noise (flipping more likely than not), strictly worse than
+    uniform — so this is not fixable by reparameterization. The honest
+    description: "FLDD with a learned lower portion of the schedule and
+    a saturated upper step."
+
     Fixed alphas
     ------------
     If fixed_alphas is provided, the schedule is non-trainable: get_alphas

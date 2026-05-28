@@ -1,8 +1,36 @@
+"""Training loss, EMA, validation, and one-epoch driver.
+
+This is the v2-audit-revised version. Differences from the pre-audit repo:
+
+1.  **`loss_form` defaults to "true_elbo"** (B5 fix; the previous "ce" default
+    is still selectable to reproduce the historical loss values exactly).
+2.  **`EMA` class added** and a fast in-place context manager (`use_ema`).
+    Diffusion FID is notoriously sensitive to EMA-smoothed weights; the
+    pre-audit pipeline had none. Decay 0.9999 with a `(1+step)/(10+step)`
+    warmup is the standard recipe.
+3.  **`compute_validation_elbo` takes a `Generator` argument** so the val
+    ELBO is bit-reproducible across calls (ported from teammate's
+    `evaluate_elbo`). `samples_per_t=1` is the cheap default now that the
+    estimator is deterministic per (epoch, seed).
+4.  **`train_epoch` accepts and updates the EMA each step.**
+
+Backwards compatibility: pass `ema=None` and `loss_form="ce"` to recover
+the original pre-audit behaviour exactly.
+"""
+
+import copy
+import math
+from contextlib import contextmanager
+
 import torch
 import torch.nn.functional as F
 
 from fldd.blocks import compute_block_target
 
+
+# ----------------------------------------------------------------------------
+# Helpers: per-element entropies used by the true-ELBO subtraction
+# ----------------------------------------------------------------------------
 
 def _bernoulli_entropy(p, eps=1e-7):
     """Per-element H[Bern(p)] in nats."""
@@ -16,6 +44,98 @@ def _categorical_entropy(probs, eps=1e-7, dim=1):
     return -(p * torch.log(p)).sum(dim=dim)
 
 
+# ----------------------------------------------------------------------------
+# EMA — exponential moving average of model parameters
+# ----------------------------------------------------------------------------
+
+class EMA:
+    """Shadow copy of a model's trainable parameters, updated each optimizer step.
+
+    `update(model)` should be called *after* `optimizer.step()`. The effective
+    decay is `min(self.decay, (1+step)/(10+step))` if `use_warmup`, otherwise
+    `self.decay`. With decay=0.9999 the warmup is ~negligible after ~100 steps.
+
+    For inference, use the `use_ema` context manager below — it swaps the EMA
+    weights into the model in-place and restores the live weights on exit.
+    """
+
+    def __init__(self, model, decay=0.9999, use_warmup=True):
+        self.decay = float(decay)
+        self.use_warmup = bool(use_warmup)
+        self.step = 0
+        self.shadow = {}
+        for name, param in model.named_parameters():
+            if param.requires_grad:
+                self.shadow[name] = param.detach().clone()
+
+    def _current_decay(self):
+        if not self.use_warmup:
+            return self.decay
+        warm = (1.0 + self.step) / (10.0 + self.step)
+        return min(self.decay, warm)
+
+    @torch.no_grad()
+    def update(self, model):
+        d = self._current_decay()
+        for name, param in model.named_parameters():
+            if name in self.shadow:
+                self.shadow[name].mul_(d).add_(param.detach(), alpha=1.0 - d)
+        self.step += 1
+
+    @torch.no_grad()
+    def copy_to(self, model):
+        """Overwrite `model`'s parameters with the EMA shadow weights, in-place."""
+        for name, param in model.named_parameters():
+            if name in self.shadow:
+                param.data.copy_(self.shadow[name])
+
+    def state_dict(self):
+        return {
+            "decay": self.decay,
+            "use_warmup": self.use_warmup,
+            "step": self.step,
+            "shadow": {k: v.detach().cpu().clone() for k, v in self.shadow.items()},
+        }
+
+    def load_state_dict(self, sd, device=None):
+        self.decay = float(sd["decay"])
+        self.use_warmup = bool(sd.get("use_warmup", True))
+        self.step = int(sd["step"])
+        self.shadow = {
+            k: (v.to(device) if device is not None else v).clone()
+            for k, v in sd["shadow"].items()
+        }
+
+
+@contextmanager
+def use_ema(model, ema):
+    """Context manager: swap EMA shadow weights into `model` for the duration.
+
+    If `ema` is None, this is a noop. Live weights are restored on exit even
+    if the wrapped code raises.
+    """
+    if ema is None:
+        yield
+        return
+    backup = {
+        name: param.detach().clone()
+        for name, param in model.named_parameters()
+        if name in ema.shadow
+    }
+    try:
+        ema.copy_to(model)
+        yield
+    finally:
+        with torch.no_grad():
+            for name, param in model.named_parameters():
+                if name in backup:
+                    param.data.copy_(backup[name])
+
+
+# ----------------------------------------------------------------------------
+# Training loss
+# ----------------------------------------------------------------------------
+
 def compute_elbo_loss(
     model,
     forward_process,
@@ -25,38 +145,20 @@ def compute_elbo_loss(
     loss_form="true_elbo",
     orientation="horizontal",
 ):
-    """Compute the discrete diffusion training loss.
+    """Discrete-diffusion training loss.
 
-    Supports both pixel-factorized (block_size=1) and block-factorized
-    (block_size in {2, 4}) reverse heads.
+    `loss_form`:
+      * "true_elbo" (default; B5 fix) — `KL[q(z_s|x) || p_theta(z_s|z_t)]`,
+        the actual ELBO contribution.
+      * "ce" — `CE[q(z_s|x), p_theta(z_s|z_t)] = KL + H[q]`. Reproduces the
+        pre-audit reported loss values. Minimizing CE places a bias on the
+        schedule φ in the direction of *lower* H[target], i.e. toward
+        *smaller* α (more concentrated targets) — see REVIEW.md §B5. That's
+        why every early α saturated against the parameterization floor in
+        the v1 runs.
 
-    The variational bound decomposes as
-
-        L = sum_{t=1}^{T} E_{z_t}[ KL[q(z_{t-1}|z_t,x) || p_theta(z_{t-1}|z_t)] ]
-            + KL[q(z_T|x) || p(z_T)]
-
-    with the t=1 KL collapsing to -log p_theta(x|z_1) because
-    q(z_0|z_1,x) = delta(x). For t > 1 we use the FLDD identity
-    q(z_s|z_t,x) = q(z_s|x) (non-Markovian forward, see forward.py).
-
-    `loss_form` controls how the t > 1 term is computed:
-
-    - "true_elbo" (default; B5 fix):
-          KL[ q(z_s|x) || p_theta(z_s|z_t) ]
-      which equals CE - H[q(z_s|x)]. This is what the ELBO bound
-      actually contains, and what should be reported as "ELBO loss"
-      in any table compared against the literature.
-
-    - "ce" (original codebase behaviour; kept for reproducibility of
-       the old E2/E4 numbers):
-          CE[ q(z_s|x), p_theta(z_s|z_t) ] = KL + H[q]
-      With learned alphas, the H[q] term has gradient w.r.t. the schedule,
-      which leaks an entropy-maximising bias into the schedule update.
-      Quantitatively, with the historical alpha schedule on binarized
-      MNIST T=4, ~77% of the reported recon loss is H[q], not KL.
-
-    Both forms have the same gradient w.r.t. the *reverse model* theta,
-    so they train identically when the schedule is held fixed.
+    Both forms share the gradient w.r.t. the reverse-model θ; they differ
+    only in the φ gradient and in the absolute loss value.
     """
     if loss_form not in ("true_elbo", "ce"):
         raise ValueError(f"loss_form must be 'true_elbo' or 'ce', got {loss_form!r}")
@@ -64,66 +166,49 @@ def compute_elbo_loss(
     device = x.device
     B = x.shape[0]
 
-    # sample a random timestep t uniformly from {1, ..., T}
     t = torch.randint(1, T + 1, (B,), device=device)
-
-    # sample z_t ~ q(z_t | x)
     alphas = forward_process.get_alphas()
-    alpha_t = alphas[t - 1]  # (B,)
+    alpha_t = alphas[t - 1]
     prob_one_zt = (
         x * (1.0 - alpha_t[:, None, None, None])
         + (1.0 - x) * alpha_t[:, None, None, None]
     )
     z_t = torch.bernoulli(prob_one_zt)
+    logits = model(z_t, t - 1)
 
-    # model prediction
-    logits = model(z_t, t - 1)  # 0-indexed timestep
-
-    # per-pixel target probabilities for z_{t-1}
     is_first = (t == 1).float()[:, None, None, None]
     alpha_s = alphas[torch.clamp(t - 2, min=0)]
     target_pixel_prob = (
         x * (1.0 - alpha_s[:, None, None, None])
         + (1.0 - x) * alpha_s[:, None, None, None]
     )
-    # for t = 1, target collapses to delta(x)
     target_pixel_prob = is_first * x + (1.0 - is_first) * target_pixel_prob
 
     if block_size == 1:
         pred_prob = torch.sigmoid(logits).clamp(1e-7, 1.0 - 1e-7)
-        # CE term per pixel
         ce = -(
             target_pixel_prob * torch.log(pred_prob)
             + (1.0 - target_pixel_prob) * torch.log(1.0 - pred_prob)
-        )  # (B, 1, H, W)
-        per_pixel = ce
+        )
+        per = ce
         if loss_form == "true_elbo":
-            # Subtract H[Bern(target)] but only for t > 1; for t = 1 the
-            # target is delta(x) and H = 0 (CE already equals -log p(x|z_1)).
             H_target = _bernoulli_entropy(target_pixel_prob)
-            per_pixel = per_pixel - (1.0 - is_first) * H_target
-        reconstruction_loss = T * per_pixel.sum(dim=(1, 2, 3)).mean()
+            per = per - (1.0 - is_first) * H_target
+        reconstruction_loss = T * per.sum(dim=(1, 2, 3)).mean()
     else:
-        # block-factorized: cross-entropy / KL over block categorical
         target_dist = compute_block_target(
             target_pixel_prob, block_size, orientation=orientation,
-        )  # (B, K^|G|, Hb, Wb)
+        )
         log_pred = F.log_softmax(logits, dim=1)
-        ce = -(target_dist * log_pred).sum(dim=1)  # (B, Hb, Wb)
-        per_block = ce
+        ce = -(target_dist * log_pred).sum(dim=1)
+        per = ce
         if loss_form == "true_elbo":
-            # H[Categorical(target_dist)] over the K^|G| states. For t = 1
-            # the target is one-hot (collapsed delta), H = 0; we mask
-            # below to be explicit and numerically safe.
-            H_target = _categorical_entropy(target_dist, dim=1)  # (B, Hb, Wb)
-            per_block = per_block - (1.0 - is_first.squeeze(1)) * H_target
-        reconstruction_loss = T * per_block.sum(dim=(1, 2)).mean()
+            H_target = _categorical_entropy(target_dist, dim=1)
+            per = per - (1.0 - is_first.squeeze(1)) * H_target
+        reconstruction_loss = T * per.sum(dim=(1, 2)).mean()
 
-    # prior loss: KL[q(z_T|x) || Uniform]
     prior_loss = forward_process.kl_prior(x)
-
     loss = reconstruction_loss + prior_loss
-
     metrics = {
         "loss": loss.item(),
         "recon": reconstruction_loss.item(),
@@ -132,6 +217,10 @@ def compute_elbo_loss(
     }
     return loss, metrics
 
+
+# ----------------------------------------------------------------------------
+# Validation ELBO (deterministic, seeded)
+# ----------------------------------------------------------------------------
 
 @torch.no_grad()
 def compute_validation_elbo(
@@ -142,32 +231,37 @@ def compute_validation_elbo(
     device,
     block_size=1,
     loss_form="true_elbo",
-    samples_per_t=4,
+    samples_per_t=1,
     orientation="horizontal",
+    seed=0,
 ):
-    """Estimate the held-out ELBO with reduced Monte Carlo noise.
+    """Deterministic full-T held-out ELBO.
 
-    Unlike compute_elbo_loss (which samples ONE t per image), here we
-    iterate over all t in {1, ..., T} and average `samples_per_t` z_t
-    samples per t. With T = 4 and samples_per_t = 4 this is 16x more
-    stable than the training-time stochastic estimate, which matters
-    when this quantity is used to pick best.pt (B6).
-
-    Returns a dict with mean per-image recon, prior, and total loss.
+    Iterates over all t ∈ {1,...,T} and averages `samples_per_t` z_t draws
+    per (image, t). A fresh `torch.Generator` is seeded with `seed` at the
+    start, so the returned number is **bit-reproducible across epochs and
+    runs** given the same model + val_loader (ported from teammate's
+    `evaluate_elbo`). `samples_per_t=1` is enough for a held-out set of
+    several thousand images: per-image variance is averaged out across the
+    set, and reproducibility matters more than per-image variance for
+    picking the best checkpoint.
     """
     model.eval()
     forward_process.eval()
 
+    gen = torch.Generator(device=device).manual_seed(int(seed))
+
     total_recon = 0.0
     total_prior = 0.0
     n_images = 0
+
+    alphas = forward_process.get_alphas()
 
     for (x,) in val_loader:
         x = x.to(device)
         B = x.shape[0]
 
         per_image_recon = torch.zeros(B, device=device)
-        alphas = forward_process.get_alphas()
 
         for t_int in range(1, T + 1):
             t = torch.full((B,), t_int, device=device, dtype=torch.long)
@@ -186,7 +280,7 @@ def compute_validation_elbo(
                     x * (1.0 - alpha_t[:, None, None, None])
                     + (1.0 - x) * alpha_t[:, None, None, None]
                 )
-                z_t = torch.bernoulli(prob_one_zt)
+                z_t = torch.bernoulli(prob_one_zt, generator=gen)
                 logits = model(z_t, t - 1)
 
                 if block_size == 1:
@@ -197,8 +291,7 @@ def compute_validation_elbo(
                     )
                     per = ce
                     if loss_form == "true_elbo":
-                        H_target = _bernoulli_entropy(target_pixel_prob)
-                        per = per - (1.0 - is_first) * H_target
+                        per = per - (1.0 - is_first) * _bernoulli_entropy(target_pixel_prob)
                     accum = accum + per.sum(dim=(1, 2, 3))
                 else:
                     target_dist = compute_block_target(
@@ -208,17 +301,14 @@ def compute_validation_elbo(
                     ce = -(target_dist * log_pred).sum(dim=1)
                     per = ce
                     if loss_form == "true_elbo":
-                        H_target = _categorical_entropy(target_dist, dim=1)
-                        per = per - (1.0 - is_first.squeeze(1)) * H_target
+                        per = per - (1.0 - is_first.squeeze(1)) * _categorical_entropy(target_dist, dim=1)
                     accum = accum + per.sum(dim=(1, 2))
 
             per_image_recon = per_image_recon + accum / samples_per_t
 
-        # NOTE: we are computing sum_t E_{z_t}[KL_t] directly — no T multiplier.
-        # This is the deterministic sum, not the random-t MC estimate.
-        prior_per_image = forward_process.kl_prior(x).item() * B
+        prior_per_image = forward_process.kl_prior(x).item()
         total_recon += per_image_recon.sum().item()
-        total_prior += prior_per_image
+        total_prior += prior_per_image * B
         n_images += B
 
     model.train()
@@ -233,6 +323,10 @@ def compute_validation_elbo(
     }
 
 
+# ----------------------------------------------------------------------------
+# One epoch
+# ----------------------------------------------------------------------------
+
 def train_epoch(
     model,
     forward_process,
@@ -243,7 +337,14 @@ def train_epoch(
     block_size=1,
     loss_form="true_elbo",
     orientation="horizontal",
+    ema=None,
+    grad_clip=1.0,
 ):
+    """Single training epoch.
+
+    If `ema` is an `EMA` instance, its shadow weights are updated after
+    every optimizer step.
+    """
     model.train()
     forward_process.train()
     total_metrics = {"loss": 0.0, "recon": 0.0, "prior": 0.0}
@@ -253,14 +354,19 @@ def train_epoch(
         x = x.to(device)
         optimizer.zero_grad()
         loss, metrics = compute_elbo_loss(
-            model, forward_process, x, T, block_size, loss_form=loss_form,
-            orientation=orientation,
+            model, forward_process, x, T, block_size,
+            loss_form=loss_form, orientation=orientation,
         )
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(
-            list(model.parameters()) + list(forward_process.parameters()), 1.0
-        )
+        if grad_clip and grad_clip > 0:
+            torch.nn.utils.clip_grad_norm_(
+                list(model.parameters()) + list(forward_process.parameters()),
+                grad_clip,
+            )
         optimizer.step()
+
+        if ema is not None:
+            ema.update(model)
 
         total_metrics["loss"] += metrics["loss"]
         total_metrics["recon"] += metrics["recon"]
