@@ -139,12 +139,27 @@ def main():
             train_secs = time.time() - t0
             print(f"  trained in {train_secs:.1f}s  best_score={r['best_score']:.4f}")
 
+            # Score FID on best.pt (lowest val ELBO), not the final-epoch model.
+            # The final-epoch model drifts after the best epoch and gives
+            # misleadingly bad FID — we found this the hard way during R1 v2.
+            best_path = f"{args.save_dir}/bs{bs}_s{seed}_best.pt"
+            print(f"  loading best.pt (epoch {r['best_epoch']}) for FID...")
+            best_ckpt = torch.load(best_path, map_location=args.device,
+                                    weights_only=False)
+            _so = best_ckpt.get("sigmoid_offset", args.sigmoid_offset)
+            from fldd.unet import UNet
+            best_model = UNet(channels=(32, 64, 128), block_size=bs).to(args.device).eval()
+            best_model.load_state_dict(best_ckpt["model"])
+            best_fp = LearnedForwardProcess(T=args.T, sigmoid_offset=_so).to(args.device).eval()
+            best_fp.load_state_dict(best_ckpt["forward"])
+
             t1 = time.time()
             print(f"  computing FID (in-memory)...")
             fid = compute_fid_inmem(
-                r["model"], r["forward_process"],
+                best_model, best_fp,
                 args.T, bs, args.n_fid_samples, args.device,
             )
+            del best_model, best_fp, best_ckpt
             fid_secs = time.time() - t1
             print(f"  FID = {fid:.4f}  (computed in {fid_secs:.1f}s)")
 
