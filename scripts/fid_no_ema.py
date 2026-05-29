@@ -44,6 +44,12 @@ from collections import defaultdict
 import numpy as np
 import torch
 
+# Make `fldd` importable when invoked as `python scripts/fid_no_ema.py` from
+# the repo root: Python puts scripts/ on sys.path[0], not the repo root, so
+# prepend the repo root (the parent of scripts/) explicitly.
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from fldd.data import get_binarized_mnist
 from fldd.forward import LearnedForwardProcess
 from fldd.sample import sample

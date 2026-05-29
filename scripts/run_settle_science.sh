@@ -34,6 +34,7 @@ set -u
 
 REPO=${REPO:-$HOME/work/aml-runs-fixed}
 cd "$REPO"
+export PYTHONPATH="$REPO:${PYTHONPATH:-}"   # so `python scripts/*.py` can import fldd
 
 EXTRA_SEEDS=${EXTRA_SEEDS:-}     # space-separated, e.g. EXTRA_SEEDS="45 46"
 
